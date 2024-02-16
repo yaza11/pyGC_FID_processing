@@ -568,7 +568,7 @@ class Spectra(BaseClassSpectrum):
         for spec in self.spectra:
             spec.set_kernels(**kwargs)
         
-    # def set_summed(self):
+    def set_summed(self):
         rt_min, rt_max = self.get_rts_extent()
         rts = np.arange(rt_min, rt_max + self.delta_rt, self.delta_rt)
         counts = np.zeros_like(rts)
