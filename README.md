@@ -46,6 +46,12 @@ Align all spectra to the first one, determined as the lag at maximum crosscorrel
 ```python
 s.align_spectra(plts=False, max_time_offset=None)
 ```
+Cut of injection peak after alignment (injection peak helps with stability for alignment)
+```python
+s.set_rt_window_all(window=(5, np.infty))
+```
+
+
 Sum up the spectra, sets the "rts" and "counts" attribute
 ```python
 s.set_summed()
