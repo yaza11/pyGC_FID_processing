@@ -384,7 +384,7 @@ class Spectrum(BaseClassSpectrum):
         
     def xcorr(self, other, plts=False, max_time_offset=None):
         """
-        Calculate crosscorrelation for a and b within a certain lag window.
+        Calculate crosscorrelation for self and other and return the maximum.
 
         Parameters
         ----------
@@ -415,16 +415,8 @@ class Spectrum(BaseClassSpectrum):
         b = other.counts
         N = len(b)
 
-        # b = np.pad(b.copy(), maxlags)    
         lags = correlation_lags(N, N, mode='full')
         times = diffs[0] * lags
-        # corrs = np.array([
-        #     np.correlate(
-        #         a, 
-        #         b[maxlags + lag:maxlags + lag + N], 
-        #         mode='valid'
-        #     )[0] for lag in lags
-        # ])
         corrs = correlate(a, b, mode='full')
         if max_time_offset is not None:
             mask = np.abs(times) <= max_time_offset
@@ -446,22 +438,6 @@ class Spectrum(BaseClassSpectrum):
     
     def bin_spectrum(self):
         """Find intensities of compound based on kernels."""
-        # weight is the integrated weighted signal
-        # ideally this would take the integral but since mzs are equally 
-        # spaced, we can use the sum (scaled accordingly), so instead of
-        # line_spectrum[idx_peak] = np.trapz(weighted_signal, x=self.mzs)
-        # take
-        # line_spectrum[idx_peak] = np.sum(weighted_signal) * dmz
-        #
-        # and instead of summing over peaks we can write this as matrix
-        # multiplication
-        #
-        # equivalent to 
-        # line_spectrum = np.zeros(N_peaks)
-        # for idx_peak in range(N_peaks):
-        #     weighted_signal = spectrum.intensities * bigaussians[idx_peak, :]
-        #     line_spectrum[idx_peak] = np.sum(weighted_signal) * dmz
-        # precompute bigaussians
         N_peaks = len(self.peaks)
         
         dmt = np.abs(np.diff(self.counts)[0])
@@ -592,7 +568,7 @@ class Spectra(BaseClassSpectrum):
         for spec in self.spectra:
             spec.set_kernels(**kwargs)
         
-    def set_summed(self):
+    # def set_summed(self):
         rt_min, rt_max = self.get_rts_extent()
         rts = np.arange(rt_min, rt_max + self.delta_rt, self.delta_rt)
         counts = np.zeros_like(rts)
@@ -604,13 +580,16 @@ class Spectra(BaseClassSpectrum):
             counts[mask] += spec.counts
         self.rts, self.counts = rts, counts
         
-    def bin_spectrum(self, **kwargs):
+    def bin_spectrum(self):
         def _bin_spectrum(spectrum, idx):
             """Find intensities of compound based on kernels."""
             # weight is the integrated weighted signal
             # ideally this would take the integral but since mzs are equally 
             # spaced, we can use the sum (scaled accordingly), so instead of
-            # line_spectrum[idx_peak] = np.trapz(weighted_signal, x=self.mzs)
+            # line_spectrum = np.zeros(N_peaks)
+            # for idx_peak in range(N_peaks):
+            #     weighted_signal = spectrum.counts * kernels[idx_peak, :]
+            #     line_spectrum[idx_peak] = np.trapz(weighted_signal, x=self.rts)
             # take
             # line_spectrum[idx_peak] = np.sum(weighted_signal) * dmz
             #
@@ -636,7 +615,8 @@ class Spectra(BaseClassSpectrum):
             # x_c, H, sigma_l, sigma_r
             sigma_l = self.kernel_params[idx_peak, 2]
             sigma_r = self.kernel_params[idx_peak, 3]
-            H = np.sqrt(2 / np.pi) / (sigma_l + sigma_r)  # normalization constant
+            # H = np.sqrt(2 / np.pi) / (sigma_l + sigma_r)  # normalization constant
+            H = np.sqrt(2)
             kernels[idx_peak] = self.bigaussian(
                 self.rts, 
                 x_c=self.kernel_params[idx_peak, 0], 
@@ -658,18 +638,14 @@ class Spectra(BaseClassSpectrum):
                 print(f'estimated time left: {(predict - time_elapsed):.1f} s')
         print('done binning spectra')
             
-    def plt_summed(self, plt_all=False, plt_kernels=False):
+    def plt_summed(self, plt_all=False):
         if not hasattr(self, 'counts'):
             self.set_summed()
         if hasattr(self, 'kernel_params'):
             counts_approx = self.get_estimated_spectrum()
         plt.figure()
-        for spec in self.spectra:
-            mask = slice(
-                np.argmin(np.abs(spec.rts.min() - self.rts)),
-                np.argmin(np.abs(spec.rts.max() - self.rts)) + 1
-            )
-            if plt_all:
+        if plt_all:
+            for spec in self.spectra:    
                 plt.plot(spec.rts, spec.counts)
         plt.plot(self.rts, self.counts, label='summed')
         if hasattr(self, 'kernel_params'):
@@ -693,400 +669,58 @@ class Spectra(BaseClassSpectrum):
             index=index
         )
     
-        return df
+        return df.T
     
-#     def set_masses(self):
-#         """Initiate masses and intensities summed spectrum."""
-#         # round to next smallest multiple of delta_mz
-#         smallest_mz = int(self.limits[0] / self.delta_mz) * self.delta_mz
-#         # round to next biggest multiple of delta_mz
-#         biggest_mz = (int(self.limits[1] / self.delta_mz) + 1) * self.delta_mz
-#         # equally spaced
-#         self.mzs =  np.arange(smallest_mz, biggest_mz + self.delta_mz, self.delta_mz)
-#         self.intensities = np.zeros_like(self.mzs)
-    
-#     def initiate(self, reader, indices, limits):
-#         """Set limits and masses."""
-#         if indices is None:
-#             if not hasattr(reader, 'indices'):
-#                 reader.create_indices()    
-#             indices = reader.indices
-#         self.indices = indices
-#         if limits is None:
-#             if not hasattr(reader, 'metaData'):
-#                 reader.set_meta_data()
-#             reader.set_QTOF_window()
-#             limits = reader.limits
-#         self.limits = limits
-#         self.set_masses()
-    
-#     def add_spectrum(self, spectrum: Spectrum):
-#         """Add passed spectrum values to summed spectrum."""
-#         # spectrum = spectrum.copy()
-#         spectrum.resample(self.mzs)
-
-#         self.intensities += spectrum.intensities
-    
-#     def add_all_spectra(self, reader, **kwargs):
-#         """Add up all spectra found in the mcf file."""
-#         N = len(self.indices)
-#         print(f'adding up {N} spectra ...')
+    def set_reconstruction_losses(self, idxs: list[int] = None, plts=False, ylim=None):
+        """
+        Obtain the loss of information for each spectrum from the binning.
+        
+        Peak areas are integrated based on the assumption that peaks are 
+        bigaussian shaped and that retention times offsets between spectra are
+        described by a constant function. These assumptions may not always be 
+        true in which case the binning may result in significant information 
+        loss. This function calculates the difference between the original 
+        (processed) signals and the one described by the kernels and gives the
+        loss in terms of the integrated difference divided by the area of the 
+        original signal.
+        """
+        def H_from_area(area, sigma_l, sigma_r):
+            # \int_{-infty}^{infty} H \exp(- (x - x_c)^2 / (2 sigma)^2)dx 
+            #   = sqrt(2 pi) H sigma
+            # => A = H sqrt(pi / 2) (sigma_l + sigma_r)
+            # <=> H = sqrt(2 / pi) * A* 1 / (sigma_l + sigma_r)
+            return np.sqrt(2 / np.pi) * area / (sigma_l + sigma_r)
+        
+        if idxs is None:
+            idxs = np.arange(len(self.spectra))
+        
+        self.losses = np.zeros(len(self.spectra))
+        for c, idx in enumerate(idxs):
+            print(f'setting loss for spectrum {c + 1} out of {len(idxs)} ...')
+            spec = self.spectra[idx]
+            N_peaks = len(self.peaks)
+            rts = spec.rts
+            y_rec = np.zeros_like(rts)
+            # y_kern = np.zeros_like(rts)
+            for jdx in range(N_peaks):
+                x_c, H, sigma_l, sigma_r = self.kernel_params[jdx, :]
+                # y_kern += self.bigaussian(rts, x_c, np.sqrt(2) * np.percentile(y_rec, 95), sigma_l, sigma_r)
+                area = self.line_spectra[idx, jdx]
+                H = H_from_area(area, sigma_l, sigma_r)
+                y_rec += self.bigaussian(rts, x_c, H, sigma_l, sigma_r)
+            loss = np.sum(np.abs(spec.counts - y_rec)) / np.sum(spec.counts)
+            self.losses[idx] = loss
             
-#         time0 = time.time()
-#         # iterate over all spectra
-#         for it, index in enumerate(self.indices):
-#             spectrum = reader.get_spectrum(int(index)) 
-#             self.add_spectrum(spectrum, **kwargs)
-#             time_now = time.time()
-#             if it % 10 ** (np.around(np.log10(N), 0) - 2) == 0:
-#                 time_elapsed = time_now - time0
-#                 predict = time_elapsed * N / (it + 1)
-#                 print(f'estimated time left: {(predict - time_elapsed):.1f} s')
-#         print('done adding up spectra')
-        
-#     def set_peaks(self, prominence: float | None = None, width=3, **kwargs):
-#         """
-#         Find peaks in summed spectrum using scipy's find_peaks function.
-
-#         Parameters
-#         ----------
-#         prominence : float, optional
-#             Required prominence for peaks. The default is None. This defaults
-#             to 10 % of the median intensity
-#         width : int, optional
-#             Minimum number of points between peaks. The default is 3.
-#         **kwargs : dict
-#             Additional kwargs for find_peaks.
-
-#         Sets peaks and properties
-
-#         """
-#         if prominence is None:
-#             median = np.median(self.intensities)
-#             prominence = .1 * median
-        
-#         self.peaks, self.peak_properties = find_peaks(
-#             self.intensities, prominence=prominence, width=width, **kwargs
-#         )
-        
-#         # save parameters to dict for later reference
-#         self.peak_setting_parameters = kwargs
-#         self.peak_setting_parameters['prominence'] = prominence
-#         self.peak_setting_parameters['width'] = width
+            if plts:
+                plt.figure()
+                plt.plot(spec.rts, spec.counts, label='original')
+                plt.plot(spec.rts, y_rec, label='reconstructed')
+                plt.legend()
+                if ylim is not None:
+                    plt.ylim(ylim)
+                plt.title(f'Reconstruction loss: {loss:.3f}')
+                plt.show()
     
-#     def gaussian_from_peak(self, peak_idx):
-#         assert hasattr(self, 'peaks'), 'call set_peaks first' 
-#         mz_idx = self.peaks[peak_idx]  # mz index of of center 
-        
-        
-#         H = self.intensities[mz_idx] # corresponding height
-#         # width of peak at half maximum
-#         FWHM_l = self.mzs[
-#             (self.peak_properties["left_ips"][peak_idx] + .5).astype(int)
-#         ]
-#         FWHM_r = self.mzs[
-#             (self.peak_properties["right_ips"][peak_idx] + .5).astype(int)
-#         ]
-#         mz_c = (FWHM_l + FWHM_r) / 2
-#         # convert FWHM to standard deviation
-#         sigma_l = -(FWHM_l - mz_c) / (2 * np.log(2))
-#         sigma_r = (FWHM_r - mz_c) / (2 * np.log(2))        
-#         sigma = (sigma_l + sigma_r) / 2
-#         return mz_c, H, sigma
-    
-#     def kernel_fit_from_peak(self, peak_idx):
-#         """Find kernel parameters for a peak with the shape of a bigaussian."""
-#         assert hasattr(self, 'peaks'), 'call set_peaks first' 
-#         mz_idx = self.peaks[peak_idx]  # mz index of of center 
-        
-#         # width of peak at half maximum
-#         idx_l = (self.peak_properties["left_ips"][peak_idx] + .5).astype(int)
-#         idx_r = (self.peak_properties["right_ips"][peak_idx] + .5).astype(int)
-#         mask = slice(idx_l, idx_r)
-#         if hasattr(self, 'kernel_params') and np.any(self.kernel_params[peak_idx, :]):
-#             mz_c, H, sigma, *sigma_r = self.kernel_params[peak_idx, :]
-#             bounds_l = [
-#                 mz_c - sigma / 4, 
-#                 H * .8, 
-#                 sigma * .8
-#             ]
-#             bounds_r = [
-#                 mz_c + sigma / 4,    
-#                 H * 1.2,
-#                 sigma * 1.2
-#             ]
-#             if len(sigma_r) > 0:
-#                 bounds_l.append(sigma_r[0] * .8)
-#                 bounds_r.append(sigma_r[0] * 1.2)
-#             params, _ = curve_fit(
-#                 f=self.kernel_func, 
-#                 xdata=self.mzs[mask], 
-#                 ydata=self.intensities[mask], 
-#                 p0=self.kernel_params[peak_idx, :],
-#                 bounds=(bounds_l, bounds_r)
-#             )
-#         else:
-#             return self.kernel_params[peak_idx, :]
-        
-#         return params
-    
-#     def bigaussian_from_peak(self, peak_idx: int, use_offset=False):
-#         """Find kernel parameters for a peak with the shape of a bigaussian."""
-#         assert hasattr(self, 'peaks'), 'call set_peaks first' 
-#         mz_idx = self.peaks[peak_idx]  # mz index of of center 
-#         mz_c = self.mzs[mz_idx] # center of gaussian
-#         # height at center of peak - prominence
-#         H = self.intensities[mz_idx] # corresponding height
-#         # width of peak at half maximum
-#         FWHM_l = self.mzs[
-#             (self.peak_properties["left_ips"][peak_idx] + .5).astype(int)
-#         ]
-#         FWHM_r = self.mzs[
-#             (self.peak_properties["right_ips"][peak_idx] + .5).astype(int)
-#         ]
-#         # convert FWHM to standard deviation
-#         sigma_l = -(FWHM_l - mz_c) / (2 * np.log(2))
-#         sigma_r = (FWHM_r - mz_c) / (2 * np.log(2))        
-#         return mz_c, H, sigma_l, sigma_r
-    
-#     @staticmethod
-#     def gaussian(x: np.ndarray, x_c, H, sigma):
-#         return H * np.exp(-1/2 * ((x - x_c) / sigma) ** 2)
-    
-#     @staticmethod
-#     def bigaussian(x: np.ndarray, x_c, H, sigma_l, sigma_r):
-#         """
-#         Evaluate bigaussian for mass vector based on parameters.
-
-#         Parameters
-#         ----------
-#         x : np.ndarray
-#             mass vector.
-#         x_c : float
-#             mass at center of peak
-#         H : float
-#             Amplitude of peak.
-#         sigma_l : float
-#             left-side standard deviation.
-#         sigma_r : float
-#             right-side standard deviation.
-
-#         Returns
-#         -------
-#         np.ndarray
-#             Intensities of bigaussian.
-
-#         """
-#         x_l = x[x <= x_c]
-#         x_r = x[x > x_c]
-#         y_l = H * np.exp(-1/2 * ((x_l - x_c) / sigma_l) ** 2)
-#         y_r = H * np.exp(-1/2 * ((x_r - x_c) / sigma_r) ** 2)
-#         return np.hstack([y_l, y_r])
-    
-#     @property
-#     def kernel_func(self):
-#         if self.kernel_shape == 'bigaussian':
-#             return self.bigaussian
-#         elif self.kernel_shape == 'gaussian':
-#             return self.gaussian
-        
-#     @property
-#     def kernel_func_from_peak(self):
-#         if self.kernel_shape == 'bigaussian':
-#             return self.bigaussian_from_peak
-#         elif self.kernel_shape == 'gaussian':
-#             return self.gaussian_from_peak
-    
-#     def set_kernels(self, use_bigaussian=False, fine_tune=False):
-#         """
-#         Based on the peak properties, find bigaussian parameters to 
-#         approximate spectrum. Creates kernel_params where cols correspond to 
-#         peaks and rows different properties. Properties are: m/z, vertical 
-#         shift, intensity at max, sigma left, sigma right
-#         """
-#         assert hasattr(self, 'peaks'), 'call set peaks first'
-#         if use_bigaussian: 
-#             self.kernel_shape = 'bigaussian'
-#             self.kernel_params = np.zeros((len(self.peaks), 4))
-#         else:
-#             self.kernel_shape = 'gaussian'
-#             self.kernel_params = np.zeros((len(self.peaks), 3))
-#         kernel_func_from_peak = self.kernel_func_from_peak
-        
-#         for idx in range(len(self.peaks)):
-#             self.kernel_params[idx, :] = kernel_func_from_peak(idx)
-#             if fine_tune:
-#                 try:
-#                     params = self.kernel_fit_from_peak(idx)
-#                     self.kernel_params[idx, :] = params
-#                 except RuntimeError as e:
-#                     print(idx, e)
-#                 except TypeError as e:
-#                     print(idx, e)
-#         # vertical shifts get taken care of by taking sum
-        
-#     def plt_summed(self, plt_kernels=False):
-#         assert hasattr(self, 'kernel_params'), 'call set_kernels first'
-#         # calculate approximated signal by summing up kernels
-#         intensities_approx = np.zeros_like(self.intensities)
-#         plt.figure()
-        
-#         for i in range(len(self.peaks)):
-#             y = self.kernel_func(self.mzs, *self.kernel_params[i, :])
-#             intensities_approx += y
-#             if plt_kernels:
-#                 plt.plot(self.mzs, y)
-#         plt.plot(self.mzs, self.intensities, label='summed intensity')
-#         plt.plot(self.mzs, intensities_approx, label='estimated')
-#         plt.legend()
-#         plt.xlabel(r'$m/z$ in Da')
-#         plt.ylabel('Intensity')
-#         plt.show()
-        
-#     def bin_spectra(self, reader: ReadBrukerMCF):
-#         """For each spectrum find overlap between kernels and signal."""
-#         def _bin_spectrum(spectrum, idx):
-#             """Find intensities of compound based on kernels."""
-#             if (len(spectrum.mzs) != len(self.mzs)) \
-#                     or (not np.allclose(spectrum.mzs, self.mzs)):
-#                 spectrum.resample(self.mzs)
-#             # weight is the integrated weighted signal
-#             # ideally this would take the integral but since mzs are equally 
-#             # spaced, we can use the sum (scaled accordingly), so instead of
-#             # line_spectrum[idx_peak] = np.trapz(weighted_signal, x=self.mzs)
-#             # take
-#             # line_spectrum[idx_peak] = np.sum(weighted_signal) * dmz
-#             #
-#             # and instead of summing over peaks we can write this as matrix
-#             # multiplication
-#             #
-#             # equivalent to 
-#             # line_spectrum = np.zeros(N_peaks)
-#             # for idx_peak in range(N_peaks):
-#             #     weighted_signal = spectrum.intensities * bigaussians[idx_peak, :]
-#             #     line_spectrum[idx_peak] = np.sum(weighted_signal) * dmz
-#             line_spectrum = (spectrum.intensities @ kernels) * dmz
-#             self.line_spectra[idx, :] = line_spectrum
-        
-#         assert hasattr(self, 'kernel_params'), 'calculate kernels with set_kernels'
-        
-#         indices_spectra = self.indices
-#         N_spectra = len(indices_spectra)  # number of spectra in mcf file
-#         N_peaks = len(self.peaks)  # number of identified peaks
-#         self.line_spectra = np.zeros((N_spectra, N_peaks))  # result array
-        
-#         # precompute bigaussians
-#         dmz = self.mzs[1] - self.mzs[0]
-#         kernels = np.zeros((N_peaks, len(self.mzs)))
-#         if self.kernel_shape == 'bigaussian':
-#             for idx_peak in range(N_peaks):
-#                 # x_c, H, sigma_l, sigma_r
-#                 sigma_l = self.kernel_params[idx_peak, 2]
-#                 sigma_r = self.kernel_params[idx_peak, 3]
-#                 H = np.sqrt(2 / np.pi) / (sigma_l + sigma_r)  # normalization constant
-#                 kernels[idx_peak] = self.bigaussian(
-#                     self.mzs, 
-#                     x_c=self.kernel_params[idx_peak, 0], 
-#                     H=H,  # normalized kernels
-#                     sigma_l=sigma_l, 
-#                     sigma_r=sigma_r
-#                 )
-#             kernels = kernels.T
-#         elif self.kernel_shape == 'gaussian':
-#             for idx_peak in range(N_peaks):
-#                 # x_c, H, sigma
-#                 sigma = self.kernel_params[idx_peak, 2]
-#                 H = 1 / (np.sqrt(2 * np.pi) * sigma)  # normalization constant
-#                 kernels[idx_peak] = self.gaussian(
-#                     self.mzs, 
-#                     x_c=self.kernel_params[idx_peak, 0], 
-#                     H=H,  # normalized kernels
-#                     sigma=sigma
-#                 )
-#             kernels = kernels.T
-        
-#         # iterate over spectra and bin according to kernels
-#         print(f'binning {N_spectra} spectra into {N_peaks} bins ...')
-#         time0 = time.time()
-#         for it, idx_spectrum in enumerate(indices_spectra):
-#             spectrum = reader.get_spectrum(int(idx_spectrum)) 
-#             _bin_spectrum(spectrum, it)
-#             if it % 10 ** (np.around(np.log10(N_spectra), 0) - 2) == 0:
-#                 time_now = time.time()
-#                 time_elapsed = time_now - time0
-#                 predict = time_elapsed * N_spectra / (it + 1)
-#                 print(f'estimated time left: {(predict - time_elapsed):.1f} s')
-#         print('done binning spectra')
-        
-#     def binned_spectra_to_df(self, reader: ReadBrukerMCF):
-#         """Turn the line_spectra into the familiar df with R, x, y columns."""
-#         if hasattr(self, 'feature_table'):
-#             return self.feature_table
-#         assert hasattr(self, 'line_spectra'), 'create line spectra with bin_spectra'
-#         if not hasattr(reader, 'spots'):
-#             reader.create_spots()
-        
-#         df = pd.DataFrame(
-#             data=self.line_spectra.copy(), 
-#             columns=np.around(self.kernel_params[:, 0], 4).astype(str)
-#         )
-#         # add R, x, y columns
-#         names = reader.spots.names
-#         str_prefix = r'R(\d+)X'
-#         str_x = r'R\d+X(.*?)Y'
-#         str_y = r'Y(.*?)$'
-        
-#         def rxy(name):
-#             r = int(re.findall(str_prefix, name)[0])
-#             x = int(re.findall(str_x, name)[0])
-#             y = int(re.findall(str_y, name)[0])
-#             return [r, x, y]
-#         RXYs = np.array([rxy(name) for name in names])
-#         if self.indices.shape != reader.indices.shape:
-#             mask = np.array(
-#                 [np.argwhere(idx == reader.indices)[0][0] for idx in self.indices]
-#             )
-#         else:
-#             mask = np.ones_like(self.indices, dtype=bool)
-#         df['R'] = RXYs[mask, 0]
-#         df['x'] = RXYs[mask, 1]
-#         df['y'] = RXYs[mask, 2]
-#         self.feature_table = df
-#         return self.feature_table
-    
-#     def get_kernel_params_df(self):
-#         assert hasattr(self, 'kernel_params'), 'call set_kernels'
-#         if self.kernel_shape == 'bigaussian':
-#             columns = ['mz', 'H', 'sigma_l', 'sigma_r']
-#         elif self.kernel_shape == 'gaussian':
-#             columns = ['mz', 'H', 'sigma']
-#         df = pd.DataFrame(data=self.kernel_params, columns=columns)
-#         return df
-        
-#     def save(self):
-#         """Save object to d-folder."""
-#         dict_backup = self.__dict__.copy()
-#         # dont save feature table AND line spectra
-#         if hasattr(self, 'feature_table') and hasattr(self, 'line_spectra'):
-#             self.__delattr__('line_spectra')
-#         keep_attributes = set(self.__dict__.keys()) & class_to_attributes(self)
-#         existent_attributes = list(self.__dict__.keys())
-#         for attribute in existent_attributes:
-#             if attribute not in keep_attributes:
-#                 self.__delattr__(attribute)
-        
-#         file = self.path_d_folder + '/' + 'spectra_object.pickle'
-#         with open(file, 'wb') as inp:
-#             pickle.dump(self, inp, pickle.HIGHEST_PROTOCOL)
-#         self.__dict__ = dict_backup
-        
-#     def load(self):
-#         """Load object from d-folder."""
-#         file = self.path_d_folder + '/' + 'spectra_object.pickle'
-#         with open(file, 'rb') as inp:
-#             self.__dict__ = pickle.load(inp).__dict__
-        
-
 if __name__ == '__main__':
     pass
     
