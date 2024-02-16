@@ -33,10 +33,15 @@ Smooth the signals, remove outliers, bigger window_size gives smoother signals
 ```python
 s.remove_outliers_all(window_length=101, diff_threshold=.001, plts=False)
 ```
+
+![image](https://github.com/yaza11/pyGC_FID_processing/assets/116643078/e486aeed-496a-40e4-b36c-1608a9c37a58)
+
 Remove the baseline from each spectrum by subtracting result from a minimum filter
 ```python
 s.subtract_base_line_all(window_size_portion=1/50, plts=False)
 ```
+![image](https://github.com/yaza11/pyGC_FID_processing/assets/116643078/3ebf2e45-0251-4b18-9347-4f831ed9eed1)
+
 Align all spectra to the first one, determined as the lag at maximum crosscorrelation
 ```python
 s.align_spectra(plts=False, max_time_offset=None)
@@ -69,6 +74,7 @@ df.to_excel('your/path/here.xlsx')
 ```
 The quality of the binning procedure can be controlled for each measurement, defines the "losses" attribute
 ```python
-s.set_reconstruction_losses(plts=True, ylim=(0, 2e7))
+s.set_reconstruction_losses(idxs=None, plts=True, ylim=(0, 2e7))
 ```
+![image](https://github.com/yaza11/pyGC_FID_processing/assets/116643078/21f9de93-1008-4f3f-92af-afdb00edd946)
 
