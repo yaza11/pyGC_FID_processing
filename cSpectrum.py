@@ -41,6 +41,13 @@ class BaseClassSpectrum:
         df = pd.DataFrame({'RT': self.rts, 'counts': self.counts})
         return df
     
+    def set_rt_window(self, window: tuple[int]):
+        assert (len(window) == 2) and (window[0] < window[1]), \
+            'window should be of the form (lower retention time, upper retention time)'
+        mask = (self.rts >= window[0]) & (self.rts <= window[1])
+        self.rts = self.rts[mask]
+        self.counts = self.counts[mask]
+    
     def bigaussian_from_peak(self, peak_idx: int):
         """Find kernel parameters for a peak with the shape of a bigaussian."""
         assert hasattr(self, 'peaks'), 'call set_peaks first' 
@@ -559,6 +566,10 @@ class Spectra(BaseClassSpectrum):
         rt_min, rt_max = self.get_rts_extent()
         rts = np.arange(rt_min, rt_max + self.delta_rt, self.delta_rt)
         self.resample_all(delta_rt=rts)
+        
+    def set_rt_window_all(self, *args, **kwargs):
+        for spec in self.spectra:
+            spec.set_rt_window(*args, **kwargs)
     
     def set_peaks_all(self, **kwargs):
         for spec in self.spectra:
